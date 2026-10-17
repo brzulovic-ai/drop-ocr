@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+  }
+}
+
+.font-manga {
+  font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+}
+
+.font-mono-code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Manga screentone background patterns */
+.manga-screentone-light {
+  background-image: radial-gradient(rgba(20, 83, 45, 0.15) 0.85px, transparent 0.85px);
+  background-size: 8px 8px;
+}
+
+.manga-screentone-dense {
+  background-image: radial-gradient(rgba(20, 83, 45, 0.22) 1.2px, transparent 1.2px);
+  background-size: 5px 5px;
+}
+
+.manga-speedlines {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(22, 101, 52, 0.04),
+    rgba(22, 101, 52, 0.04) 12px,
+    transparent 12px,
+    transparent 24px
+  );
+}
+
+.manga-border {
+  border: 2px solid #0E1A13;
+  box-shadow: 3px 3px 0px #0E1A13;
+}
+
+.manga-border-sm {
+  border: 1.5px solid #0E1A13;
+  box-shadow: 2px 2px 0px #0E1A13;
+}
+
+.manga-border-accent {
+  border: 2px solid #15803D;
+  box-shadow: 3px 3px 0px #15803D;
+}
+
+.manga-border-interactive {
+  border: 2px solid #0E1A13;
+  box-shadow: 3px 3px 0px #0E1A13;
+  transition: all 0.15s ease-out;
+}
+
+.manga-border-interactive:hover {
+  box-shadow: 5px 5px 0px #166534;
+  transform: translate(-1px, -1px);
+}

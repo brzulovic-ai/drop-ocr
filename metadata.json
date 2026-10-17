@@ -1,0 +1,6 @@
+{
+  "name": "Drop gere OCR · Minimalist Green Manga",
+  "description": "Minimalistic green manga style OCR web app with drag-and-drop links, image extraction powered by Hugging Face Xiaomi-OCR-0 and high precision AI vision.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
