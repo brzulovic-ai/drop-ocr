@@ -11,9 +11,10 @@ export interface OCRResult {
   language: string;
   readingDirection?: 'vertical' | 'horizontal';
   translation?: string;
-  provider: 'huggingface' | 'gemini' | 'tesseract' | string;
+  provider: 'huggingface' | 'gemini' | 'tesseract' | 'docker' | string;
   model: string;
   hfNote?: string;
+  dockerEndpoint?: string;
   processingTimeMs: number;
   timestamp: string;
 }

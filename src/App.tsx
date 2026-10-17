@@ -37,6 +37,7 @@ export default function App() {
   const [currentEngine, setCurrentEngine] = useState<EngineType>('huggingface');
   const [hfModel, setHfModel] = useState<string>('SeerRay-Lab/Xiaomi-OCR-0');
   const [hfToken, setHfToken] = useState<string>('');
+  const [dockerEndpoint, setDockerEndpoint] = useState<string>('http://localhost:8000');
   const [targetLang, setTargetLang] = useState<string>('English');
 
   // Inspector & filter state
@@ -86,6 +87,7 @@ export default function App() {
             provider: engine,
             hfModel,
             hfToken,
+            dockerEndpoint,
             targetLang,
           }),
         });
@@ -105,6 +107,7 @@ export default function App() {
           translation: data.translation,
           provider: data.provider,
           model: data.model || hfModel,
+          dockerEndpoint: data.dockerEndpoint,
           hfNote: data.hfNote,
           processingTimeMs: duration,
           timestamp: new Date().toLocaleTimeString(),
@@ -198,6 +201,8 @@ export default function App() {
             onHfModelChange={setHfModel}
             hfToken={hfToken}
             onHfTokenChange={setHfToken}
+            dockerEndpoint={dockerEndpoint}
+            onDockerEndpointChange={setDockerEndpoint}
             targetLang={targetLang}
             onTargetLangChange={(lang) => {
               setTargetLang(lang);
@@ -259,28 +264,28 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="p-4 bg-white border-2 border-[#0E1A13] shadow-[3px_3px_0px_#0E1A13]">
                 <h2 className="text-sm font-black uppercase text-[#0E1A13] mb-1">
-                  01. Hugging Face Xiaomi-OCR-0
+                  01. Docker & Bun Architecture
                 </h2>
                 <p className="text-xs text-[#3E5C49] leading-relaxed">
-                  Direct pipeline integration with <code className="font-mono bg-emerald-50 px-1 border border-emerald-200">SeerRay-Lab/Xiaomi-OCR-0</code> and vision endpoints for Japanese & multilingual text recognition.
+                  Fully containerized using Bun <code className="font-mono bg-emerald-50 px-1 border border-emerald-200">Dockerfile</code>, <code className="font-mono bg-emerald-50 px-1 border border-emerald-200">docker-compose.yml</code>, and clean <code className="font-mono bg-emerald-50 px-1 border border-emerald-200">Makefile</code> targets.
                 </p>
               </div>
 
               <div className="p-4 bg-white border-2 border-[#0E1A13] shadow-[3px_3px_0px_#0E1A13]">
                 <h2 className="text-sm font-black uppercase text-[#0E1A13] mb-1">
-                  02. Tactile Manga Inspector
+                  02. Xiaomi-OCR-0 Inference
                 </h2>
                 <p className="text-xs text-[#3E5C49] leading-relaxed">
-                  Interactive speech bubble highlighting, binarized high-contrast manga scan filter, text-to-speech audio reader, and one-click translation.
+                  Call local/containerized endpoints via OpenAI Vision protocol or Hugging Face Cloud Inference with automated zero-failure fallback.
                 </p>
               </div>
 
               <div className="p-4 bg-white border-2 border-[#0E1A13] shadow-[3px_3px_0px_#0E1A13]">
                 <h2 className="text-sm font-black uppercase text-[#0E1A13] mb-1">
-                  03. Seamless Links & Clipboard
+                  03. Tactile Manga Workspace
                 </h2>
                 <p className="text-xs text-[#3E5C49] leading-relaxed">
-                  Drop image URLs directly from other web tabs, paste from clipboard anywhere with <kbd className="font-mono text-[11px] bg-slate-100 px-1 border border-slate-300">Ctrl+V</kbd>, or export to Markdown and JSON.
+                  Drop images, drag web links, paste with <kbd className="font-mono text-[11px] bg-slate-100 px-1 border border-slate-300">Ctrl+V</kbd>, inspect bounding boxes, and export to TXT, MD, or JSON.
                 </p>
               </div>
             </div>
@@ -297,7 +302,7 @@ export default function App() {
             <span>Minimalistic Green Manga Style</span>
           </div>
           <div className="flex items-center gap-4 text-xs font-mono">
-            <span>Powered by Hugging Face & AI Vision</span>
+            <span>Powered by Bun, Docker & Hugging Face</span>
             <span aria-hidden="true">·</span>
             <span>2026</span>
           </div>

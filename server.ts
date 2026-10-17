@@ -27,6 +27,56 @@ const ai = new GoogleGenAI({
 });
 
 /**
+ * Health check endpoint for Docker inference container
+ */
+app.get('/api/docker-health', async (req: Request, res: Response) => {
+  const endpoint = (req.query.endpoint as string) || process.env.DOCKER_OCR_ENDPOINT || 'http://ocr-inference:8000';
+  const startTime = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+
+    // Try standard health endpoints
+    let checkUrl = `${endpoint.replace(/\/+$/, '')}/health`;
+    let response = await fetch(checkUrl, { signal: controller.signal }).catch(() => null);
+
+    if (!response || !response.ok) {
+      // Fallback check to /v1/models or root
+      checkUrl = `${endpoint.replace(/\/+$/, '')}/v1/models`;
+      response = await fetch(checkUrl, { signal: controller.signal }).catch(() => null);
+    }
+
+    clearTimeout(timeout);
+    const latencyMs = Date.now() - startTime;
+
+    if (response && (response.ok || response.status === 404)) {
+      res.json({
+        available: true,
+        endpoint,
+        status: 'online',
+        latencyMs,
+      });
+      return;
+    }
+
+    res.json({
+      available: false,
+      endpoint,
+      status: 'offline',
+      message: `Container at ${endpoint} did not respond affirmatively`,
+    });
+  } catch (err: any) {
+    res.json({
+      available: false,
+      endpoint,
+      status: 'offline',
+      message: err.message || 'Container unreachable',
+    });
+  }
+});
+
+/**
  * Proxy image downloading to prevent CORS errors when users drop/paste image URLs
  */
 app.post('/api/fetch-image', async (req: Request, res: Response) => {
@@ -96,16 +146,20 @@ app.post('/api/fetch-image', async (req: Request, res: Response) => {
 
 /**
  * OCR Text Extraction Endpoint
- * Supports Hugging Face (SeerRay-Lab/Xiaomi-OCR-0 and others) + Gemini Vision OCR fallback/precision
+ * Supports:
+ * - Docker Container Inference (vLLM / TGI container for SeerRay-Lab/Xiaomi-OCR-0)
+ * - Hugging Face Inference API (SeerRay-Lab/Xiaomi-OCR-0 cloud)
+ * - Gemini 3.8 Flash Vision OCR (Precision fallback & layout analysis)
  */
 app.post('/api/ocr', async (req: Request, res: Response) => {
   try {
     const {
       imageBase64,
       mimeType = 'image/jpeg',
-      provider = 'auto', // 'huggingface' | 'gemini' | 'auto'
+      provider = 'auto', // 'docker' | 'huggingface' | 'gemini' | 'auto'
       hfModel = 'SeerRay-Lab/Xiaomi-OCR-0',
       hfToken = '',
+      dockerEndpoint = process.env.DOCKER_OCR_ENDPOINT || 'http://ocr-inference:8000',
       targetLang = '',
     } = req.body;
 
@@ -118,6 +172,7 @@ app.post('/api/ocr', async (req: Request, res: Response) => {
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
     const imageBuffer = Buffer.from(cleanBase64, 'base64');
 
+    let dockerErrorReason = '';
     let hfErrorReason = '';
     let extractedText = '';
     let structuredLines: any[] = [];
@@ -125,8 +180,78 @@ app.post('/api/ocr', async (req: Request, res: Response) => {
     let translatedText = '';
     let usedProvider = provider;
 
-    // 1. Attempt Hugging Face if requested or in auto mode
-    if (provider === 'huggingface' || provider === 'auto') {
+    // 1. Attempt Docker Container Inference if requested
+    if (provider === 'docker') {
+      try {
+        const cleanEndpoint = dockerEndpoint.replace(/\/+$/, '');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000); // 12s timeout for local container
+
+        // Try OpenAI Vision format standard for vLLM / Hugging Face Multimodal containers
+        const v1Url = `${cleanEndpoint}/v1/chat/completions`;
+        const v1Payload = {
+          model: hfModel || 'SeerRay-Lab/Xiaomi-OCR-0',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Extract all text verbatim from this image. Preserve Japanese characters, English, punctuation, and line breaks.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mimeType};base64,${cleanBase64}`,
+                  },
+                },
+              ],
+            },
+          ],
+          max_tokens: 2048,
+          temperature: 0.1,
+        };
+
+        let dockerRes = await fetch(v1Url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(v1Payload),
+          signal: controller.signal,
+        }).catch(() => null);
+
+        clearTimeout(timeout);
+
+        if (dockerRes && dockerRes.ok) {
+          const json = await dockerRes.json();
+          extractedText = json.choices?.[0]?.message?.content || '';
+          usedProvider = 'docker';
+        } else {
+          // Try Hugging Face TGI /generate or /predict endpoint
+          const tgiUrl = `${cleanEndpoint}/generate`;
+          const tgiRes = await fetch(tgiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              inputs: `data:${mimeType};base64,${cleanBase64}`,
+              parameters: { max_new_tokens: 1024 },
+            }),
+          }).catch(() => null);
+
+          if (tgiRes && tgiRes.ok) {
+            const tgiJson = await tgiRes.json();
+            extractedText = tgiJson.generated_text || JSON.stringify(tgiJson);
+            usedProvider = 'docker';
+          } else {
+            dockerErrorReason = `Docker Inference (${cleanEndpoint}): Container is currently offline or unreachable. Run 'make up' or start the container.`;
+          }
+        }
+      } catch (dockErr: any) {
+        dockerErrorReason = `Docker container connection error at ${dockerEndpoint}: ${dockErr?.message}. Falling back seamlessly.`;
+      }
+    }
+
+    // 2. Attempt Hugging Face Cloud if requested or in auto mode
+    if ((provider === 'huggingface' || provider === 'auto') && !extractedText) {
       try {
         const tokenToUse = hfToken || process.env.HF_TOKEN || '';
         const headers: Record<string, string> = {
@@ -137,7 +262,6 @@ app.post('/api/ocr', async (req: Request, res: Response) => {
           headers['Authorization'] = `Bearer ${tokenToUse}`;
         }
 
-        // Try both router and direct inference URLs
         const endpoint = `https://api-inference.huggingface.co/models/${hfModel}`;
         const hfResponse = await fetch(endpoint, {
           method: 'POST',
@@ -150,7 +274,6 @@ app.post('/api/ocr', async (req: Request, res: Response) => {
           if (contentType.includes('application/json')) {
             const hfData = await hfResponse.json();
             
-            // Parse HF response formats (array of {generated_text}, object, or raw text)
             if (Array.isArray(hfData) && hfData[0]?.generated_text) {
               extractedText = hfData.map((item: any) => item.generated_text).join('\n');
             } else if (typeof hfData === 'object' && hfData.generated_text) {
@@ -174,19 +297,13 @@ app.post('/api/ocr', async (req: Request, res: Response) => {
             errJson = { error: errText };
           }
           hfErrorReason = `Hugging Face (${hfModel}): ${errJson.error || hfResponse.statusText || 'Inference not currently available on serverless tier'}`;
-          
-          if (provider === 'huggingface' && !provider.includes('auto')) {
-            // User explicitly requested HF only, but if it failed, inform them with auto fallback option
-            console.warn('HF failed, falling back to Gemini Vision for seamless experience:', hfErrorReason);
-          }
         }
       } catch (hfErr: any) {
         hfErrorReason = `HF connection error: ${hfErr?.message}`;
-        console.warn('HF invocation error:', hfErr);
       }
     }
 
-    // 2. If no text yet or Gemini requested or HF fallback needed:
+    // 3. Seamless Fallback or Gemini Requested
     if (!extractedText) {
       usedProvider = 'gemini';
       
@@ -259,6 +376,8 @@ Return your result strictly formatted as valid JSON adhering to this schema:
         }));
     }
 
+    const note = dockerErrorReason || hfErrorReason || undefined;
+
     res.json({
       success: true,
       fullText: extractedText,
@@ -266,8 +385,14 @@ Return your result strictly formatted as valid JSON adhering to this schema:
       language: detectedLang,
       translation: translatedText,
       provider: usedProvider,
-      model: usedProvider === 'huggingface' ? hfModel : 'gemini-3.8-flash',
-      hfNote: hfErrorReason ? hfErrorReason : undefined,
+      model:
+        usedProvider === 'docker'
+          ? `${hfModel} (Docker Container)`
+          : usedProvider === 'huggingface'
+          ? hfModel
+          : 'gemini-3.8-flash',
+      dockerEndpoint: usedProvider === 'docker' ? dockerEndpoint : undefined,
+      hfNote: note,
     });
   } catch (error: any) {
     console.error('OCR processing error:', error);

@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # 1. Drop gere OCR Web Application (Built with Bun)
+  ocr-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drop-gere-ocr-web
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DOCKER_OCR_ENDPOINT=http://ocr-inference:8000
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+    depends_on:
+      - ocr-inference
+    restart: unless-stopped
+    networks:
+      - ocr-network
+
+  # 2. Hugging Face Inference Service for Xiaomi-OCR-0
+  # Supports Hugging Face Text Generation Inference (TGI) or vLLM container serving SeerRay-Lab/Xiaomi-OCR-0
+  ocr-inference:
+    image: ghcr.io/huggingface/text-generation-inference:latest
+    container_name: drop-gere-ocr-inference
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_ID=SeerRay-Lab/Xiaomi-OCR-0
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - PORT=8000
+      - MAX_INPUT_LENGTH=4096
+      - MAX_TOTAL_TOKENS=8192
+    volumes:
+      - hf-cache:/data
+    restart: unless-stopped
+    networks:
+      - ocr-network
+    # Uncomment deploy section below when running on NVIDIA GPU hosts:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+networks:
+  ocr-network:
+    driver: bridge
+
+volumes:
+  hf-cache:
+    name: drop-gere-hf-cache
